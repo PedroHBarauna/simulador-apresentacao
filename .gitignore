@@ -1,0 +1,17 @@
+# Unity generated files
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+
+# Visual Studio files
+.vs/
+*.csproj
+*.sln
+
+# Other common ignored files
+*.unitypackage
+*.DS_Store
+Thumbs.db
