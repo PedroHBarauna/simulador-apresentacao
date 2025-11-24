@@ -1,29 +1,39 @@
 using System;
-using System.Linq;
 using UnityEngine;
 
 /// <summary>
 /// Analisador de áudio simples que extrai métricas vocais básicas
 /// e atribui uma nota objetiva (0 a 10) com base em clareza, volume e variação tonal.
+/// Agora com método público AnalyzeClip para ser chamado após gravação.
 /// </summary>
 [RequireComponent(typeof(AudioSource))]
 public class VoiceAnalyzer : MonoBehaviour
 {
-    public AudioClip clip; // arraste seu arquivo .wav no Inspector
+    public AudioClip clip; // ainda pode ser usado no Inspector
     private float[] samples;
     private float sampleRate;
     private float rmsValue;
     private float dbValue;
     private float pitchValue;
 
+    // NÃO executa a análise automaticamente no Start.
     void Start()
     {
-        if (clip == null)
+        // opcional: se já houver um clip no inspector, analisa.
+        if (clip != null)
+            AnalyzeClip(clip);
+    }
+
+    // Método público para receber o clip gravado em runtime
+    public void AnalyzeClip(AudioClip newClip)
+    {
+        if (newClip == null)
         {
-            Debug.LogError("Nenhum áudio foi atribuído!");
+            Debug.LogError("VoiceAnalyzer: clip nulo recebido para análise.");
             return;
         }
 
+        clip = newClip;
         sampleRate = clip.frequency;
         samples = new float[clip.samples * clip.channels];
         clip.GetData(samples, 0);
