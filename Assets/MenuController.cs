@@ -14,7 +14,10 @@ public class MenuController : MonoBehaviour
 
     public void OpenSettings()
     {
+        Debug.Log("Inciando Configurações");
+        Debug.Log(mainMenu.activeSelf);
         mainMenu.SetActive(false);
+        Debug.Log(mainMenu.activeSelf);
         settingsMenu.SetActive(true);
     }
 
@@ -27,6 +30,7 @@ public class MenuController : MonoBehaviour
     public void StartGame()
     {
         Debug.Log("Iniciando jogo...");
+        Debug.Log(mainMenu.activeSelf);
 
         // Aqui você pode iniciar o script da cutscene
         FindFirstObjectByType<GameStartManager>()?.StartGame();
