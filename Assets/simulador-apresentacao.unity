@@ -274,7 +274,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!114 &18816684
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2078,6 +2078,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::GameStartManager
   fadeImage: {fileID: 1840438595}
+  camAnimator: {fileID: 330585548}
   fadeDuration: 5
   menuPanel: {fileID: 1195194324}
   blurImage: {fileID: 708967272}
@@ -3132,7 +3133,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &1115783241
 MonoBehaviour:
   m_ObjectHideFlags: 0

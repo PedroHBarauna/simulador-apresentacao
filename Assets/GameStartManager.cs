@@ -5,6 +5,8 @@ public class GameStartManager : MonoBehaviour
 {
     [Header("Fade")]
     public Image fadeImage;
+    public Animator camAnimator;
+
     public float fadeDuration = 2f;
 
     [Header("Menu Objects")]
@@ -73,8 +75,39 @@ public class GameStartManager : MonoBehaviour
 
     private System.Collections.IEnumerator MoveCameraToPosition()
     {
+        camAnimator.enabled = false;
+        // Remova: camAnimator.speed = 0f; (a menos que a animação não deva rodar)
+
         Camera cam = Camera.main;
-        Vector3 targetPosition = new Vector3(0, 1, -10);
-        yield return null;
+        AudioListener audioListener = cam.GetComponent<AudioListener>();
+        if (audioListener != null)
+        {
+            audioListener.enabled = false;
+        }
+        Vector3 startPosition = cam.transform.position;
+        Quaternion startRotation = cam.transform.rotation;
+
+        Vector3 targetPosition = new Vector3(8.4f, 22f, 137f);
+        Quaternion targetRotation = Quaternion.Euler(25f, 180f, 0f);
+
+        float duration = 1.5f; // Duração do movimento em segundos
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            float t = elapsed / duration;
+            // Opcional: Easing para movimento mais suave (ex: SmoothStep)
+            // t = t * t * (3f - 2f * t);
+
+            cam.transform.position = Vector3.Lerp(startPosition, targetPosition, t);
+            cam.transform.rotation = Quaternion.Lerp(startRotation, targetRotation, t);
+
+            elapsed += UnityEngine.Time.deltaTime;
+            yield return null; // Espera até o próximo frame
+        }
+
+        // Garante que a câmera atinja a posição e rotação exatas no final
+        cam.transform.position = targetPosition;
+        cam.transform.rotation = targetRotation;
     }
 }
