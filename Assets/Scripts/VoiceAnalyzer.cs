@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading.Tasks;
 using System.IO;
@@ -95,9 +96,18 @@ public class VoiceAnalyzer : MonoBehaviour
         float nota = CalculateScore();
 
         if (!string.IsNullOrEmpty(transcriptText) && !string.IsNullOrEmpty(openAiApiKey))
+        {
             StartCoroutine(GetCoherenceScoreFromOpenAI(transcriptText, nota));
+        }
+        else if (string.IsNullOrEmpty(transcriptText) && !string.IsNullOrEmpty(openAiApiKey))
+        {
+            // Sem transcrição? Transcreve com OpenAI e depois aplica a dedução.
+            StartCoroutine(TranscribeAndEvaluate(nota));
+        }
         else
-            Debug.LogWarning($"🎙️ Nota final sem dedução de contexto: {nota:F1}. Motivo: {(string.IsNullOrEmpty(transcriptText) ? "transcrição indisponível" : "chave OpenAI ausente")}");
+        {
+            Debug.LogWarning($"🎙️ Nota final sem dedução de contexto: {nota:F1}. Motivo: {(string.IsNullOrEmpty(openAiApiKey) ? "chave OpenAI ausente" : "transcrição indisponível")}");
+        }
     }
 
     public void SetTranscript(string transcript) => transcriptText = transcript;
@@ -266,11 +276,16 @@ public class VoiceAnalyzer : MonoBehaviour
     }
 
     // Corrotina para enviar transcrição para OpenAI e obter score de coerência/nexo
+    [Serializable]
+    private class ChatMessage { public string role; public string content; }
+    [Serializable]
+    private class ChatRequest { public string model; public ChatMessage[] messages; public int max_tokens; }
     private System.Collections.IEnumerator GetCoherenceScoreFromOpenAI(string transcript, float notaTecnica)
     {
         if (string.IsNullOrEmpty(openAiApiKey))
         {
             Debug.LogError("Chave da OpenAI não encontrada no .env");
+            Debug.Log($"⚠️ Contexto não avaliado. Nota final (sem desconto): {notaTecnica:F1}");
             yield break;
         }
 
@@ -279,15 +294,21 @@ public class VoiceAnalyzer : MonoBehaviour
         using (var client = new HttpClient())
         {
             client.DefaultRequestHeaders.Add("Authorization", $"Bearer {openAiApiKey}");
-            var requestBody = new
+            // Usa classes serializáveis para garantir inclusão do campo 'model'
+            var requestBody = new ChatRequest
             {
-                model = "gpt-3.5-turbo",
-                messages = new[] {
-                    new { role = "user", content = prompt }
-                },
+                model = "gpt-4o-mini", // modelo recomendado (gpt-3.5-turbo descontinuado)
+                messages = new[] { new ChatMessage { role = "user", content = prompt } },
                 max_tokens = 10
             };
             string json = JsonUtility.ToJson(requestBody);
+            if (string.IsNullOrEmpty(json) || json == "{}")
+            {
+                // Fallback manual se JsonUtility falhar (ambientes antigos / limitações)
+                json = "{\"model\":\"gpt-4o-mini\",\"messages\":[{\"role\":\"user\",\"content\":\"" + EscapeForJson(prompt) + "\"}],\"max_tokens\":10}";
+                Debug.LogWarning("JsonUtility falhou em serializar request; usando JSON montado manualmente.");
+            }
+            Debug.Log("[OpenAI] Request JSON: " + json);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             var postTask = client.PostAsync("https://api.openai.com/v1/chat/completions", content);
             while (!postTask.IsCompleted) yield return null;
@@ -295,6 +316,101 @@ public class VoiceAnalyzer : MonoBehaviour
             if (postTask.IsFaulted)
             {
                 Debug.LogError("Erro ao enviar requisição para OpenAI: " + postTask.Exception?.GetBaseException().Message);
+                Debug.Log($"⚠️ Contexto não avaliado (erro de requisição). Nota final: {notaTecnica:F1}");
+                yield break;
+            }
+
+            var response = postTask.Result;
+            if (!response.IsSuccessStatusCode)
+            {
+                Debug.LogError($"Erro HTTP OpenAI: {(int)response.StatusCode} {response.ReasonPhrase}");
+                Debug.Log($"⚠️ Contexto não avaliado (status HTTP). Nota final: {notaTecnica:F1}");
+                yield break;
+            }
+            var readTask = response.Content.ReadAsStringAsync();
+            while (!readTask.IsCompleted) yield return null;
+
+            if (readTask.IsFaulted)
+            {
+                Debug.LogError("Erro ao ler resposta da OpenAI: " + readTask.Exception?.GetBaseException().Message);
+                Debug.Log($"⚠️ Contexto não avaliado (erro leitura). Nota final: {notaTecnica:F1}");
+                yield break;
+            }
+
+            string result = readTask.Result;
+            Debug.Log($"🧠 Resposta da OpenAI: {result}");
+            int idx = result.IndexOf("content");
+            bool contextoAvaliado = false;
+            if (idx >= 0)
+            {
+                string sub = result.Substring(idx);
+                var digits = System.Text.RegularExpressions.Regex.Match(sub, "[0-9]+(\\.[0-9]+)?");
+                if (digits.Success)
+                {
+                    coherenceScore = float.Parse(digits.Value);
+                    contextoAvaliado = true;
+                }
+            }
+
+            if (contextoAvaliado)
+            {
+                // Pontuação invertida: contexto (0-10) desconta até 10 da nota técnica.
+                float descontoContexto = Mathf.Clamp(10f - coherenceScore, 0f, 10f);
+                float notaFinal = Mathf.Clamp(notaTecnica - descontoContexto, 0f, 10f);
+                Debug.Log($"🎙️ Nota final (contexto invertido): {notaFinal:F1} | Técnica: {notaTecnica:F1} | Contexto: {coherenceScore:F1} | Desconto: {descontoContexto:F1}");
+            }
+            else
+            {
+                Debug.LogWarning($"⚠️ Não foi possível avaliar o contexto (formato inesperado). Nota final sem desconto: {notaTecnica:F1}");
+            }
+        }
+        yield break;
+    }
+
+    // Transcreve o áudio atual (clip) via OpenAI Whisper e, se obtiver texto, aplica avaliação de contexto.
+    private System.Collections.IEnumerator TranscribeAndEvaluate(float notaTecnica)
+    {
+        if (clip == null)
+        {
+            Debug.LogError("Transcrição: clip nulo");
+            yield break;
+        }
+
+        if (string.IsNullOrEmpty(openAiApiKey))
+        {
+            Debug.LogError("Transcrição: chave da OpenAI ausente");
+            yield break;
+        }
+
+        byte[] wavBytes = null;
+        try
+        {
+            wavBytes = EncodeWavFromSamples(samples, clip.channels, clip.frequency);
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"Falha ao codificar WAV: {e.Message}");
+            yield break;
+        }
+
+        using (var client = new HttpClient())
+        using (var form = new MultipartFormDataContent())
+        {
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", openAiApiKey);
+
+            var fileContent = new ByteArrayContent(wavBytes);
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
+            form.Add(fileContent, "file", "audio.wav");
+            form.Add(new StringContent("whisper-1"), "model");
+            // Idioma fixo: português
+            form.Add(new StringContent("pt"), "language");
+
+            var postTask = client.PostAsync("https://api.openai.com/v1/audio/transcriptions", form);
+            while (!postTask.IsCompleted) yield return null;
+
+            if (postTask.IsFaulted)
+            {
+                Debug.LogError("Erro na transcrição (requisição): " + postTask.Exception?.GetBaseException().Message);
                 yield break;
             }
 
@@ -304,27 +420,93 @@ public class VoiceAnalyzer : MonoBehaviour
 
             if (readTask.IsFaulted)
             {
-                Debug.LogError("Erro ao ler resposta da OpenAI: " + readTask.Exception?.GetBaseException().Message);
+                Debug.LogError("Erro na transcrição (leitura resposta): " + readTask.Exception?.GetBaseException().Message);
                 yield break;
             }
 
-            string result = readTask.Result;
-            int idx = result.IndexOf("content");
-            if (idx >= 0)
+            string json = readTask.Result;
+            // Estrutura simples esperada: { "text": "..." }
+            TranscriptionResponse parsed = null;
+            try
             {
-                string sub = result.Substring(idx);
-                var digits = System.Text.RegularExpressions.Regex.Match(sub, "[0-9]+(\\.[0-9]+)?");
-                if (digits.Success)
-                    coherenceScore = float.Parse(digits.Value);
+                parsed = JsonUtility.FromJson<TranscriptionResponse>(json);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError("Falha ao parsear transcrição: " + ex.Message + " | JSON bruto=" + json);
             }
 
-            // Pontuação invertida: contexto (0-10) desconta até 10 da nota técnica.
-            // Se contexto=10, desconto=0; se contexto=0, desconto=10.
-            float descontoContexto = Mathf.Clamp(10f - coherenceScore, 0f, 10f);
-            float notaFinal = Mathf.Clamp(notaTecnica - descontoContexto, 0f, 10f);
-            Debug.Log($"🎙️ Nota final (contexto invertido): {notaFinal:F1} | Técnica: {notaTecnica:F1} | Contexto: {coherenceScore:F1} | Desconto: {descontoContexto:F1}");
+            if (parsed == null || string.IsNullOrEmpty(parsed.text))
+            {
+                Debug.LogWarning("Transcrição vazia ou inválida. Nota final sem dedução de contexto.");
+                yield break;
+            }
+
+            transcriptText = parsed.text;
+            Debug.Log($"📝 Transcrição obtida ({parsed.text.Length} chars)");
+            Debug.Log($"📝 {parsed.text}");
+
+            // Agora aplica a avaliação de contexto com a transcrição obtida
+            StartCoroutine(GetCoherenceScoreFromOpenAI(transcriptText, notaTecnica));
         }
-        yield break;
+    }
+
+    [Serializable]
+    private class TranscriptionResponse
+    {
+        public string text;
+    }
+
+    // Codifica samples em WAV PCM 16-bit little-endian
+    private byte[] EncodeWavFromSamples(float[] floatSamples, int channels, int sampleRate)
+    {
+        if (floatSamples == null || floatSamples.Length == 0)
+            throw new ArgumentException("Samples vazios");
+
+        int bytesPerSample = 2; // 16-bit PCM
+        int subchunk2Size = floatSamples.Length * bytesPerSample;
+        int chunkSize = 36 + subchunk2Size;
+
+        using (var ms = new MemoryStream(44 + subchunk2Size))
+        using (var bw = new BinaryWriter(ms))
+        {
+            // RIFF header
+            bw.Write(Encoding.ASCII.GetBytes("RIFF"));
+            bw.Write(chunkSize);
+            bw.Write(Encoding.ASCII.GetBytes("WAVE"));
+
+            // fmt chunk
+            bw.Write(Encoding.ASCII.GetBytes("fmt "));
+            bw.Write(16); // Subchunk1Size for PCM
+            bw.Write((short)1); // AudioFormat = PCM
+            bw.Write((short)channels);
+            bw.Write(sampleRate);
+            int byteRate = sampleRate * channels * bytesPerSample;
+            bw.Write(byteRate);
+            short blockAlign = (short)(channels * bytesPerSample);
+            bw.Write(blockAlign);
+            bw.Write((short)16); // BitsPerSample
+
+            // data chunk
+            bw.Write(Encoding.ASCII.GetBytes("data"));
+            bw.Write(subchunk2Size);
+
+            // PCM data
+            for (int i = 0; i < floatSamples.Length; i++)
+            {
+                float f = Mathf.Clamp(floatSamples[i], -1f, 1f);
+                short s = (short)Mathf.RoundToInt(f * 32767f);
+                bw.Write(s);
+            }
+
+            return ms.ToArray();
+        }
+    }
+
+    private string EscapeForJson(string s)
+    {
+        if (s == null) return "";
+        return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
     }
 
     // (Removidas duplicatas de métodos OpenAI)
@@ -613,63 +795,7 @@ public class VoiceAnalyzer : MonoBehaviour
             return 0.5f; // Muito variável
     }
 
-    float EstimatePitchInBuffer(float[] buffer, float sampleRate)
-    {
-        int bufferSize = buffer.Length;
-        int segmentSize = (int)(sampleRate * 0.1f); // Segmentos de 100ms
-        float silenceThreshold = rmsSilenceThreshold;
-        int totalSegments = bufferSize / segmentSize;
-        int silentSegments = 0;
-        // Tenta encontrar pitch em diferentes segmentos até achar fala real
-        for (int segmentIndex = 0; segmentIndex < totalSegments; segmentIndex++)
-        {
-            int startIdx = segmentIndex * segmentSize;
-            int endIdx = Mathf.Min(startIdx + segmentSize, bufferSize);
-            int currentSegmentSize = endIdx - startIdx;
-            // Calcula energia do segmento atual
-            float segmentEnergy = 0f;
-            for (int i = startIdx; i < endIdx; i++)
-                segmentEnergy += buffer[i] * buffer[i];
-            float segmentRms = Mathf.Sqrt(segmentEnergy / currentSegmentSize);
-            // Conta segmentos silenciosos
-            if (segmentRms < silenceThreshold)
-            {
-                silentSegments++;
-                continue; // Pula este segmento e tenta o próximo
-            }
-            // Encontrou um segmento com fala, calcula pitch
-            float[] segment = new float[currentSegmentSize];
-            Array.Copy(buffer, startIdx, segment, 0, currentSegmentSize);
-            float maxCorr = 0f;
-            int maxLag = 0;
-            int maxSamples = Mathf.Min(currentSegmentSize, (int)(sampleRate * 0.1f));
-            for (int lag = 50; lag < 1000 && lag < maxSamples; lag++)
-            {
-                float corr = 0f;
-                for (int i = 0; i < maxSamples - lag; i++)
-                    corr += segment[i] * segment[i + lag];
-                if (corr > maxCorr)
-                {
-                    maxCorr = corr;
-                    maxLag = lag;
-                }
-            }
-            if (maxLag > 0)
-            {
-                // Calcula porcentagem de silêncio total
-                silencePercentage = (float)silentSegments / totalSegments * 100f;
-                Debug.Log($"🔇 Silêncio detectado: {silencePercentage:F1}% do áudio");
-                return sampleRate / maxLag;
-            }
-        }
-        // Se chegou aqui, todo o áudio é silêncio
-        silencePercentage = 100f;
-        Debug.LogWarning("⚠️ Pitch: áudio completamente silencioso!");
-        return 0f;
-    }
-
-    // Método legado mantido para buscar pitch em buffer completo se necessário
-    // Método legado mantido para buscar pitch em buffer completo se necessário
+    // (Removido: método legado EstimatePitchInBuffer e comentários duplicados)
 
     float CalculateScore()
     {
@@ -722,6 +848,62 @@ public class VoiceAnalyzer : MonoBehaviour
         Debug.Log($"   ⭐ NOTA FINAL: {finalScore:F1}/10");
         Debug.Log($"=======================================");
 
+        // Imprime sugestões de melhoria baseadas nas métricas
+        string sugestoes = BuildImprovementSuggestions(volumeScore, clarityScore, pacingScore, expressivenessScore, continuityScore, excessivePausePenalty, finalScore);
+        Debug.Log("\n🔧 SUGESTÕES DE MELHORIA:\n" + sugestoes);
+
         return finalScore;
+    }
+
+    string BuildImprovementSuggestions(float volumeScore, float clarityScore, float pacingScore, float expressivenessScore, float continuityScore, float penalties, float finalScore)
+    {
+        System.Collections.Generic.List<string> list = new System.Collections.Generic.List<string>();
+
+        // Volume
+        if (volumeScore < 0.75f)
+        {
+            if (avgDb < -30f) list.Add("Aumentar ligeiramente o volume (microfone ou projeção da voz).");
+            else if (avgDb > -12f) list.Add("Reduzir um pouco o volume para evitar saturação/perda de conforto.");
+            else list.Add("Tornar o volume mais consistente entre os trechos.");
+        }
+
+        // Clareza
+        if (clarityScore < 0.6f)
+        {
+            if (avgRms < 0.015f) list.Add("Articular melhor as palavras e elevar um pouco a energia vocal.");
+            list.Add("Manter variação de volume estável para facilitar compreensão.");
+        }
+
+        // Ritmo / Pausas
+        if (pacingScore < 0.6f)
+        {
+            if (avgPauseDuration < 0.5f) list.Add("Inserir pequenas pausas para dar tempo de processamento ao ouvinte.");
+            else if (avgPauseDuration > 4f) list.Add("Reduzir pausas longas para manter o fluxo envolvente.");
+            list.Add("Equilibrar duração das rajadas de fala (ideal entre 8–25s).");
+        }
+
+        // Expressividade
+        if (expressivenessScore < 0.6f)
+        {
+            if (energyVariationRange < 0.015f) list.Add("Variar mais a energia (ênfase) para evitar monotonia.");
+            float pitchVarScore = CalculatePitchVariationScore();
+            if (pitchVarScore < 0.7f) list.Add("Explorar entonação (subir e descer levemente o pitch em pontos-chave).");
+        }
+
+        // Continuidade
+        if (continuityScore < 0.7f)
+        {
+            if (speechContinuityPercent < 55f) list.Add("Aumentar tempo efetivo de fala reduzindo silencios prolongados.");
+            else if (speechContinuityPercent > 85f) list.Add("Inserir pausas curtas estratégicas para dar respiro e reforçar pontos.");
+        }
+
+        // Pausas excessivas
+        if (penalties > 0f) list.Add("Evitar pausas acima de 10 segundos; retomar antes para manter engajamento.");
+
+        // Resultado geral
+        if (finalScore < 7.5f) list.Add("Revisar conteúdo para incrementar clareza e estrutura antes da próxima apresentação.");
+
+        if (list.Count == 0) list.Add("Ótimo desempenho geral! Mantenha consistência e prática.");
+        return string.Join("\n - ", list).Insert(0, " - ");
     }
 }
