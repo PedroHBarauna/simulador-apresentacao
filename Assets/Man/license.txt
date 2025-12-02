@@ -1,0 +1,11 @@
+Model Information:
+* title:	Rigged T-Pose Human Male w 50 Face Blendshapes
+* source:	https://sketchfab.com/3d-models/rigged-t-pose-human-male-w-50-face-blendshapes-cc7e4596bcd145208a6992c757854c07
+* author:	Mike Alger (https://sketchfab.com/mikealger)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "Rigged T-Pose Human Male w 50 Face Blendshapes" (https://sketchfab.com/3d-models/rigged-t-pose-human-male-w-50-face-blendshapes-cc7e4596bcd145208a6992c757854c07) by Mike Alger (https://sketchfab.com/mikealger) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
