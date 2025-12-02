@@ -88,7 +88,7 @@ public class GameStartManager : MonoBehaviour
         Quaternion startRotation = cam.transform.rotation;
 
         Vector3 targetPosition = new Vector3(8.4f, 22f, 137f);
-        Quaternion targetRotation = Quaternion.Euler(25f, 180f, 0f);
+        Quaternion targetRotation = Quaternion.Euler(5f, 180f, 0f);
 
         float duration = 1.5f; // Duração do movimento em segundos
         float elapsed = 0f;
