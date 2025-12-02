@@ -350,19 +350,26 @@ public class VoiceAnalyzer : MonoBehaviour
                 var digits = System.Text.RegularExpressions.Regex.Match(sub, "[0-9]+(\\.[0-9]+)?");
                 if (digits.Success)
                 {
-                    coherenceScore = float.Parse(digits.Value);
+                    float parsedVal;
+                    if (float.TryParse(digits.Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out parsedVal))
+                        coherenceScore = parsedVal;
+                    else if (!float.TryParse(digits.Value, out coherenceScore))
+                        coherenceScore = 0f;
+
+                    coherenceScore = Mathf.Clamp(coherenceScore, 0f, 10f);
                     contextoAvaliado = true;
                 }
             }
 
             if (contextoAvaliado)
             {
-                // Pontuação invertida: contexto (0-10) desconta até 10 da nota técnica.
-                float descontoContexto = Mathf.Clamp(10f - coherenceScore, 0f, 10f);
+                // Pontuação proporcional: falta de contexto (0-10) vira desconto de até 3.
+                // Ex.: contexto=6 -> (10-6)/10 * 3 = 1.2
+                float descontoContexto = Mathf.Clamp01((10f - coherenceScore) / 10f) * 3f;
                 float notaFinal = Mathf.Clamp(notaTecnica - descontoContexto, 0f, 10f);
                 Debug.Log($"🎙️ Nota final (contexto invertido): {notaFinal:F1} | Técnica: {notaTecnica:F1} | Contexto: {coherenceScore:F1} | Desconto: {descontoContexto:F1}");
 
-                finalScoreText.text = $"Nota Final: {notaFinal:F1}";
+                finalScoreText.text = $"Nota Final: {notaFinal:F1} \n Desconto por contexto (máximo 3 pontos): {descontoContexto:F1}";
             }
             else
             {
@@ -857,6 +864,7 @@ public class VoiceAnalyzer : MonoBehaviour
         // Imprime sugestões de melhoria baseadas nas métricas
         string sugestoes = BuildImprovementSuggestions(volumeScore, clarityScore, pacingScore, expressivenessScore, continuityScore, excessivePausePenalty, finalScore);
         Debug.Log("\n🔧 SUGESTÕES DE MELHORIA:\n" + sugestoes);
+        finalScoreText.text = $"Calculando...";
         suggestionText.text = sugestoes;
 
         return finalScore;
