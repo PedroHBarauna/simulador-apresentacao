@@ -5,7 +5,7 @@ public class GameStartManager : MonoBehaviour
 {
     [Header("Fade")]
     public Image fadeImage;
-    public float fadeDuration = 3f;
+    public float fadeDuration = 2f;
 
     [Header("Menu Objects")]
     public GameObject menuPanel;

@@ -92,9 +92,6 @@ public class GameController : MonoBehaviour
         isPresenting = false;
         presentationPanel.SetActive(false);
         counter = 0f;
-        // // Rodar AudioAnalyzer
-        // float score = audioAnalyzer.CalculateScore();
-        // string summary = audioAnalyzer.GetSummary();
 
         // Mostrar painel final
         resultsPanel.SetActive(true);
@@ -130,7 +127,7 @@ public class GameController : MonoBehaviour
         blurImage.SetActive(true);
         menuAudio.Play();
 
-        Debug.Log(mainMenu.activeSelf);
+        Debug.Log("Depois de voltar para o menu: " + mainMenu.activeSelf);
         presentationPanel.SetActive(false);
         resultsPanel.SetActive(false);
     }

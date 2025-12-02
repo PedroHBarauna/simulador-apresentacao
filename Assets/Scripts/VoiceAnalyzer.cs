@@ -5,10 +5,13 @@ using System.Text;
 using System.Threading.Tasks;
 using System.IO;
 using UnityEngine;
+using TMPro;
 
 [RequireComponent(typeof(AudioSource))]
 public class VoiceAnalyzer : MonoBehaviour
 {
+    [SerializeField] private TextMeshProUGUI suggestionText;
+    [SerializeField] private TextMeshProUGUI finalScoreText;
     // Score de coerência/nexo
     private float coherenceScore = 0f;
     private string openAiApiKey = null;
@@ -358,6 +361,8 @@ public class VoiceAnalyzer : MonoBehaviour
                 float descontoContexto = Mathf.Clamp(10f - coherenceScore, 0f, 10f);
                 float notaFinal = Mathf.Clamp(notaTecnica - descontoContexto, 0f, 10f);
                 Debug.Log($"🎙️ Nota final (contexto invertido): {notaFinal:F1} | Técnica: {notaTecnica:F1} | Contexto: {coherenceScore:F1} | Desconto: {descontoContexto:F1}");
+
+                finalScoreText.text = $"Nota Final: {notaFinal:F1}";
             }
             else
             {
@@ -618,7 +623,8 @@ public class VoiceAnalyzer : MonoBehaviour
             return 0.4f; // Muitas pausas
         else if (speechContinuityPercent > 92f)
             return 0.5f; // Sem pausas
-        else{
+        else
+        {
             Debug.LogWarning($"⚠️ Continuidade crítica: {speechContinuityPercent:F1}% de fala");
             return 0.1f; // Crítico
         }
@@ -851,6 +857,7 @@ public class VoiceAnalyzer : MonoBehaviour
         // Imprime sugestões de melhoria baseadas nas métricas
         string sugestoes = BuildImprovementSuggestions(volumeScore, clarityScore, pacingScore, expressivenessScore, continuityScore, excessivePausePenalty, finalScore);
         Debug.Log("\n🔧 SUGESTÕES DE MELHORIA:\n" + sugestoes);
+        suggestionText.text = sugestoes;
 
         return finalScore;
     }
