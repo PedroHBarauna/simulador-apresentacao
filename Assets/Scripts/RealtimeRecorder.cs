@@ -108,8 +108,8 @@ public class RealtimeRecorder : MonoBehaviour
         // Chama o analyzer se configurado
         if (autoSendToAnalyzer && voiceAnalyzer != null)
         {
-            voiceAnalyzer.AnalyzeClip(trimmedClip);
-            Debug.Log("Enviado para VoiceAnalyzer.");
+            Debug.Log($"➡️ Enviando clip gravado para VoiceAnalyzer: {trimmedClip.name} ({trimmedClip.length:F2}s)");
+            voiceAnalyzer.AnalyzeRecordedClip(trimmedClip);
         }
     }
 
