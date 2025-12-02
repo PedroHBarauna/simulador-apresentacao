@@ -4,8 +4,8 @@ public class VolumeController : MonoBehaviour
 {
     public AudioSource musicSource;
 
-    public void SetVolume(float volume)
+    public void SetVolume()
     {
-        musicSource.volume = volume;
+        musicSource.volume = this.GetComponent<UnityEngine.UI.Slider>().value;
     }
 }

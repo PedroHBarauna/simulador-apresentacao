@@ -29,7 +29,7 @@ public class MenuController : MonoBehaviour
         Debug.Log("Iniciando jogo...");
 
         // Aqui você pode iniciar o script da cutscene
-        // FindFirstObjectByType<CutsceneStart>()?.BeginCutscene();
+        FindFirstObjectByType<GameStartManager>()?.StartGame();
 
         // OU carregar a cena do jogo:
         // SceneManager.LoadScene("NomeDaCena");
